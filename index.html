@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Code Lyrics</title>
+<style>
+:root{--bg:#050507;--tx:#e8e8ee;--cm:#6b7089;--st:#a6e3a1;--fn:#7aa2f7;--pr:#bb9af7;--nm:#ff9e64;--kw:#c792ea;--ac:#7aa2f7}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--tx)}
+body{font-family:"JetBrains Mono","Fira Code",ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+#stage{position:absolute;left:6vw;right:6vw;top:40%}
+#cam{position:absolute;left:0;top:0;width:100%;transform-origin:0 0;transition:transform .35s ease-out;will-change:transform}
+#lines{position:absolute;left:0;right:0;top:0;transition:transform .5s ease}
+.m{position:absolute;visibility:hidden;display:inline-block;height:auto;transition:none}
+.l{height:1.9em;line-height:1.9em;font-size:clamp(13px,4vw,20px);white-space:pre;overflow:visible;transition:opacity .5s,filter .5s;font-weight:600}
+.c{color:var(--cm)}.s{color:var(--st)}.f{color:var(--fn)}.p{color:var(--pr)}.n{color:var(--nm)}.k{color:var(--kw)}
+.cur{display:inline-block;width:2px;height:1.2em;background:#fff;vertical-align:middle;margin-left:1px;animation:b 1s steps(1) infinite}
+@keyframes b{50%{opacity:0}}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px;display:flex;gap:10px;align-items:center;background:linear-gradient(transparent,#000a)}
+#bar[hidden],#pnl[hidden],#cover[hidden],#bTap[hidden]{display:none}
+#bar input{flex:1;accent-color:var(--ac)}
+button,.btn{font:inherit;font-size:13px;color:var(--tx);background:#ffffff14;border:1px solid #ffffff22;border-radius:8px;padding:9px 13px;cursor:pointer;display:inline-block}
+#cover{position:fixed;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;background:var(--bg);z-index:5;text-align:center;padding:24px}
+#cover small{color:var(--cm);line-height:1.5}
+#pnl{position:fixed;left:0;right:0;bottom:0;z-index:4;background:#0c0c12;border-top:1px solid #ffffff22;padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-height:80%}
+textarea{width:100%;height:30vh;background:#000;color:var(--tx);border:1px solid #ffffff22;border-radius:8px;padding:10px;font:inherit;font-size:12px}
+#bTap{padding:18px;font-size:15px;background:var(--ac);color:#000;font-weight:700}
+#info{color:var(--cm);font-size:11px;line-height:1.5}
+.fld{width:min(320px,86vw);background:#000;color:var(--tx);border:1px solid #ffffff22;border-radius:8px;padding:10px;font:inherit;font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<audio id="au" preload="auto"></audio>
+<div id="stage"><div id="cam"><div id="lines"></div></div></div>
+
+<div id="cover">
+  <b>Code Lyrics</b>
+  <label class="btn" for="pick">📂 Pilih lagu</label>
+  <input id="fTitle" class="fld" placeholder="Judul lagu">
+  <input id="fArtist" class="fld" placeholder="Artis">
+  <div class="row" style="justify-content:center">
+    <button id="bFind">🔎 Cari lirik</button>
+    <button id="bGo">▶ Mulai</button>
+  </div>
+  <small id="cinfo">Pilih lagu, lirik dan waktunya dicari otomatis (perlu internet).<br>Judul/artis bisa diedit lalu tekan Cari lirik.</small>
+  <input id="pick" type="file" accept="audio/*" hidden>
+</div>
+
+<div id="bar" hidden>
+  <button id="bPlay">⏸</button>
+  <input id="seek" type="range" min="0" max="1000" value="0" aria-label="posisi lagu">
+  <button id="bLate" title="lirik lebih lambat">−</button>
+  <button id="bEarly" title="lirik lebih cepat">+</button>
+  <button id="bSync">Sync</button>
+</div>
+
+<div id="pnl" hidden>
+  <textarea id="ta" placeholder="Tulis/tempel lirik (satu baris per baris), atau format LRC [mm:ss.xx] teks"></textarea>
+  <div class="row">
+    <button id="bStart">Mulai sync (tap)</button>
+    <button id="bLrc">Pakai LRC</button>
+    <button id="bClose">Tutup</button>
+  </div>
+  <button id="bTap" hidden>Baris berikutnya ▸</button>
+  <div id="info">Tap: lagu diputar dari awal, ketuk tombol besar tepat saat tiap baris mulai dinyanyikan. LRC: tempel baris berformat [01:23.45] teks.</div>
+</div>
+
+<script>
+/* ================= KONFIGURASI ================= */
+const AUDIO_SRC = "";   // nama file lagu di folder yang sama
+const AUTO_CODE = true;         // true = baris lirik biasa otomatis jadi kode JS
+const CAM_ZOOM = 1.3;          // zoom kamera saat lirik berjalan (1 = matikan zoom)
+const TYPE_RATIO = .75;         // porsi waktu antar baris yang dipakai untuk mengetik
+
+// TULIS LIRIK KAMU DI SINI: t = detik mulai baris, text = isi baris.
+// Baris yang mengandung "(" atau diawali "//" tidak diubah (dianggap kode sendiri).
+const LYRICS = [
+  {t:3,  text:"// tulis liriknya di sini"},
+  {t:8,  text:"baris pertama lirik kamu"},
+  {t:14, text:"baris kedua lirik kamu"},
+  {t:20, text:"const kamu = tulis(\"kode sendiri\")"}
+];
+const KEY = "codelyrics:v2";
+/* ============================================== */
+
+const A=document.getElementById('au'),box=document.getElementById('lines');
+const $=id=>document.getElementById(id);
+const KW=/^(const|let|var|if|else|return|function|new|for|while)$/;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function hl(t){
+  if(/^\s*\/\//.test(t)) return '<span class="c">'+esc(t)+'</span>';
+  const re=/("[^"]*"|'[^']*')|(\b\d+\b)|(\.?[A-Za-z_]\w*)(\()?|(\s+|.)/g;let o='',m;
+  while((m=re.exec(t))){
+    if(m[1]) o+='<span class="s">'+esc(m[1])+'</span>';
+    else if(m[2]) o+='<span class="n">'+m[2]+'</span>';
+    else if(m[3]){const w=m[3];const c=KW.test(w)?'k':m[4]?'f':w[0]==='.'?'p':'';
+      o+='<span'+(c?' class="'+c+'"':'')+'>'+esc(w)+'</span>'+(m[4]||'');}
+    else o+=esc(m[5]);
+  }
+  return o;
+}
+
+/* lirik biasa -> kode JS */
+function ident(w){
+  w=w.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]/g,'');
+  if(!w) return '_';
+  return /^\d/.test(w)?'_'+w:w;
+}
+function conv(text){
+  if(!AUTO_CODE) return text;
+  const s=text.trim();
+  if(!s||s.includes('(')||s.startsWith('//')) return text;
+  const w=s.split(/\s+/);
+  const clean=x=>x.replace(/"/g,"'");
+  if(w.length===1) return ident(w[0])+'()';
+  if(w.length===2) return ident(w[0])+'("'+clean(w[1])+'")';
+  const mid=Math.ceil(w.length/2);
+  return ident(w[0])+'.'+ident(w[1])+'("'+clean(w.slice(2,mid+1).join(' '))+'")'
+    +(w.length>mid+1?'\n':'')+(w.length>mid+1?'  .'+ident(w[mid+1])+'("'+clean(w.slice(mid+2).join(' '))+'")':'');
+}
+/* satu baris layar = satu baris lirik; pecahan kode digabung agar tetap satu baris */
+const oneLine=s=>s.replace(/\n\s*/g,'');
+
+let L=[],rows=[],last=-2,lastc=-1,maxW=null,camKey='';
+const cam=document.getElementById('cam');
+function setLyrics(arr){
+  L=arr.map(x=>({t:x.t,text:x.text,code:oneLine(conv(x.text))}));
+  box.innerHTML='';
+  rows=L.map(()=>{const r=document.createElement('div');r.className='l';r.style.opacity=0;box.appendChild(r);return r});
+  last=-2;lastc=-1;maxW=null;camKey='';
+}
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null');setLyrics(Array.isArray(s)&&s.length?s:LYRICS)}catch(e){setLyrics(LYRICS)}
+
+function render(idx,ch,full){
+  if(full){
+    rows.forEach((r,i)=>{
+      if(i>idx){r.style.opacity=0;r.innerHTML='';return}
+      const d=idx-i;
+      r.style.opacity=d===0?1:Math.max(.05,.55-d*.16);
+      r.style.filter=d===0?'none':'blur('+Math.min(2,d*.5)+'px)';
+      if(d>0) r.innerHTML=hl(L[i].code);
+    });
+    const lh=rows[0]?rows[0].offsetHeight:36;
+    box.style.transform='translateY('+(-Math.max(idx,0)*lh)+'px)';
+  }
+  if(idx>=0) rows[idx].innerHTML=hl(L[idx].code.slice(0,ch))+'<span class="cur"></span>';
+}
+let syncing=false,OFFSET=0;
+function frame(){
+  const t=A.currentTime+OFFSET;let idx=-1;
+  for(let i=0;i<L.length;i++){if(t>=L[i].t)idx=i;else break}
+  let ch=0;
+  if(idx>=0){
+    const nx=idx+1<L.length?L[idx+1].t:(A.duration||t+5);
+    const d=Math.min(6,Math.max(.6,(nx-L[idx].t)*TYPE_RATIO));
+    ch=Math.min(L[idx].code.length,Math.ceil((t-L[idx].t)/d*L[idx].code.length));
+  }
+  if(idx!==last||ch!==lastc){render(idx,ch,idx!==last);last=idx;lastc=ch}
+  camera(idx,t);
+  if(!A.paused||syncing) requestAnimationFrame(frame);
+}
+const tick=()=>requestAnimationFrame(frame);
+
+/* kamera: zoom & ikuti lirik yang sedang diketik; kembali normal saat selesai */
+function measure(){
+  const m=document.createElement('div');m.className='l m';
+  document.getElementById('stage').appendChild(m);
+  maxW=0;
+  L.forEach(x=>{m.textContent=x.code;maxW=Math.max(maxW,m.offsetWidth)});
+  m.remove();
+}
+function camera(idx,t){
+  if(!L.length) return;
+  const vw=window.innerWidth,mg=vw*.06;
+  if(maxW===null) measure();
+  const fit=Math.min(1,(vw-2*mg)/(maxW||1));
+  const lastL=L[L.length-1];
+  const lastD=Math.min(6,Math.max(.6,((A.duration||t+5)-lastL.t)*TYPE_RATIO));
+  const done=A.ended||t>=lastL.t+lastD+2;
+  const lh=rows[0]?rows[0].offsetHeight:36;
+  let s=fit,tx=0;
+  if(idx>=0&&!done&&CAM_ZOOM>1){
+    s=CAM_ZOOM;
+    const cur=rows[idx].querySelector('.cur');
+    const cx=cur?cur.offsetLeft:0;
+    tx=Math.min(0,vw*.7-mg-cx*s);
+  }
+  const ty=(1-s)*lh/2;
+  const k=s.toFixed(3)+'|'+tx.toFixed(0);
+  if(k!==camKey){camKey=k;cam.style.transform='translate('+tx.toFixed(1)+'px,'+ty.toFixed(1)+'px) scale('+s+')'}
+}
+window.addEventListener('resize',()=>{maxW=null;camKey='';tick()});
+
+/* lagu */
+if(AUDIO_SRC)A.src=AUDIO_SRC;
+A.onerror=()=>{$('cinfo').innerHTML='File "'+AUDIO_SRC+'" tidak ditemukan.<br>Tekan <b>Pilih lagu</b> untuk memilih dari penyimpanan.'};
+
+/* ---------- pilih lagu -> lirik otomatis (LRCLIB) ---------- */
+const say=m=>{$('cinfo').innerHTML=m};
+function parseLrc(txt){
+  const out=[];
+  txt.split('\n').forEach(line=>{
+    const st=[...line.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
+    if(!st.length) return;
+    const text=line.replace(/\[[^\]]*\]/g,'').trim();
+    st.forEach(m=>out.push({t:+(+m[1]*60+ +m[2]).toFixed(2),text}));
+  });
+  return out.sort((a,b)=>a.t-b.t);
+}
+function dec(bytes,enc){
+  try{
+    if(enc===1){const be=bytes[0]===0xFE;return new TextDecoder(be?'utf-16be':'utf-16le').decode(bytes.subarray(2))}
+    return new TextDecoder(enc===2?'utf-16be':enc===3?'utf-8':'iso-8859-1').decode(bytes);
+  }catch(e){return ''}
+}
+async function readTags(file){
+  const r={title:'',artist:''};
+  try{
+    const buf=new Uint8Array(await file.slice(0,600000).arrayBuffer());
+    if(buf[0]!==0x49||buf[1]!==0x44||buf[2]!==0x33) return r;
+    const ver=buf[3];
+    const size=(buf[6]<<21)|(buf[7]<<14)|(buf[8]<<7)|buf[9];
+    let p=10;const end=Math.min(10+size,buf.length);
+    while(p+10<end){
+      const id=String.fromCharCode(buf[p],buf[p+1],buf[p+2],buf[p+3]);
+      if(!/^[A-Z0-9]{4}$/.test(id)) break;
+      const fs=ver===4?((buf[p+4]<<21)|(buf[p+5]<<14)|(buf[p+6]<<7)|buf[p+7])
+                      :((buf[p+4]*16777216)+(buf[p+5]<<16)+(buf[p+6]<<8)+buf[p+7]);
+      if(fs<=0||p+10+fs>buf.length) break;
+      if(id==='TIT2'||id==='TPE1'){
+        const d=buf.subarray(p+11,p+10+fs);
+        const v=dec(d,buf[p+10]).replace(/\0/g,'').trim();
+        if(id==='TIT2') r.title=v; else r.artist=v;
+      }
+      p+=10+fs;
+    }
+  }catch(e){}
+  return r;
+}
+function guessFromName(name){
+  let n=name.replace(/\.[^.]+$/,'').replace(/[_]+/g,' ').trim();
+  const parts=n.split(/\s+-\s+/);
+  return parts.length>=2?{artist:parts[0],title:parts.slice(1).join(' ')}:{artist:'',title:n};
+}
+async function findLyrics(){
+  const title=$('fTitle').value.trim(),artist=$('fArtist').value.trim();
+  if(!title){say('Isi judul lagu dulu.');return false}
+  const ck='lrc:'+title.toLowerCase()+'|'+artist.toLowerCase();
+  try{const c=JSON.parse(localStorage.getItem(ck)||'null');if(c){save(c);say('Lirik dimuat dari cache ('+c.length+' baris).');return true}}catch(e){}
+  say('Mencari lirik...');
+  const dur=A.duration||0;
+  const qs=[];
+  qs.push('track_name='+encodeURIComponent(title)+(artist?'&artist_name='+encodeURIComponent(artist):''));
+  qs.push('q='+encodeURIComponent((title+' '+artist).trim()));
+  try{
+    let best=null,plain=null;
+    for(const q of qs){
+      const res=await fetch('https://lrclib.net/api/search?'+q);
+      if(!res.ok) continue;
+      const arr=await res.json();
+      const syn=arr.filter(x=>x.syncedLyrics);
+      syn.sort((a,b)=>Math.abs((a.duration||0)-dur)-Math.abs((b.duration||0)-dur));
+      if(syn.length){best=syn[0];break}
+      if(!plain) plain=arr.find(x=>x.plainLyrics)||null;
+    }
+    let out=null,note='';
+    if(best){out=parseLrc(best.syncedLyrics);note='Lirik tersinkron ditemukan: '+best.trackName+' - '+best.artistName}
+    else if(plain){
+      const ls=plain.plainLyrics.split('\n');const n=ls.length;const total=dur||n*4;
+      out=ls.map((text,i)=>({t:+(2+i*(total-6)/n).toFixed(2),text}));
+      note='Hanya ada lirik tanpa waktu; waktunya diratakan. Perbaiki lewat Sync (tap).';
+    }
+    if(!out||!out.length){say('Lirik tidak ditemukan. Coba ubah judul/artis lalu Cari lirik.');return false}
+    save(out);
+    if(best) try{localStorage.setItem(ck,JSON.stringify(out))}catch(e){}
+    say(note+'<br>'+out.length+' baris. Tekan ▶ Mulai.');
+    return true;
+  }catch(e){
+    say('Gagal mengambil lirik (cek internet).<br>Kamu masih bisa isi lirik manual lewat Sync.');
+    return false;
+  }
+}
+$('pick').onchange=async e=>{
+  const f=e.target.files[0];if(!f) return;
+  A.src=URL.createObjectURL(f);
+  const tg=await readTags(f),g=guessFromName(f.name);
+  $('fTitle').value=tg.title||g.title;$('fArtist').value=tg.artist||g.artist;
+  await new Promise(r=>{if(A.readyState>=1)r();else{A.onloadedmetadata=r;setTimeout(r,2500)}});
+  findLyrics();
+};
+$('bFind').onclick=findLyrics;
+$('bLate').onclick=()=>{OFFSET-=.2;nudge()};
+$('bEarly').onclick=()=>{OFFSET+=.2;nudge()};
+function nudge(){OFFSET=+OFFSET.toFixed(2);try{localStorage.setItem('codelyrics:off',OFFSET)}catch(e){};$('bLate').title=$('bEarly').title='geser: '+OFFSET+'s';last=-2;tick()}
+try{OFFSET=+localStorage.getItem('codelyrics:off')||0}catch(e){}
+$('bGo').onclick=()=>{
+  A.play().then(()=>{$('cover').hidden=true;$('bar').hidden=false;tick()})
+   .catch(()=>{$('cinfo').innerHTML='Lagu belum bisa diputar. Pilih lagu dulu.'});
+};
+$('bPlay').onclick=()=>{if(A.paused){A.play();tick()}else A.pause()};
+A.onplay=()=>{$('bPlay').textContent='⏸';tick()};
+A.onpause=()=>{$('bPlay').textContent='▶'};
+A.onended=()=>{$('bPlay').textContent='▶';tick()};
+A.ontimeupdate=()=>{if(A.duration&&document.activeElement!==$('seek'))$('seek').value=A.currentTime/A.duration*1000};
+$('seek').oninput=()=>{A.currentTime=$('seek').value/1000*A.duration;tick()};
+
+/* panel sync */
+let pending=[],pi=0,times=[],raw=[];
+$('bSync').onclick=()=>{$('pnl').hidden=false;$('bar').hidden=true;
+  if(!$('ta').value) $('ta').value=L.map(x=>x.text).join('\n')};
+$('bClose').onclick=()=>{$('pnl').hidden=true;$('bar').hidden=false;syncing=false;$('bTap').hidden=true};
+function save(out){
+  setLyrics(out);
+  try{localStorage.setItem(KEY,JSON.stringify(out))}catch(e){}
+}
+$('bLrc').onclick=()=>{
+  const out=parseLrc($('ta').value);
+  if(!out.length){$('info').textContent='Format LRC tidak terbaca. Contoh: [00:12.50] teks lirik';return}
+  save(out);
+  $('info').textContent='LRC dipakai ('+out.length+' baris) dan tersimpan di perangkat ini.';
+  A.currentTime=0;
+};
+$('bStart').onclick=()=>{
+  raw=$('ta').value.split('\n');
+  pending=raw.map((text,i)=>({text,i})).filter(x=>x.text.trim());
+  if(!pending.length||/^\s*\[\d+:\d+/.test(pending[0].text)){$('info').textContent='Tulis lirik biasa (tanpa [mm:ss]) untuk mode tap, atau pakai tombol Pakai LRC.';return}
+  times=[];pi=0;syncing=true;A.currentTime=0;A.play();tick();
+  $('bTap').hidden=false;showNext();
+};
+function showNext(){
+  $('bTap').textContent='Mulai: '+pending[pi].text.trim().slice(0,28)+' ▸';
+  $('info').textContent='Baris '+(pi+1)+' dari '+pending.length;
+}
+$('bTap').onclick=()=>{
+  times[pi]=+A.currentTime.toFixed(2);pi++;
+  if(pi<pending.length){showNext();return}
+  const tOf={};pending.forEach((p,j)=>tOf[p.i]=times[j]);
+  const out=[];
+  for(let i=0;i<raw.length;i++){
+    let t=tOf[i];
+    if(t===undefined){let n=i+1;while(n<raw.length&&tOf[n]===undefined)n++;t=n<raw.length?tOf[n]:times[times.length-1]}
+    out.push({t,text:raw[i]});
+  }
+  save(out);syncing=false;$('bTap').hidden=true;
+  $('ta').value=JSON.stringify(out);
+  $('info').textContent='Selesai dan tersimpan. JSON di atas bisa ditempel ke LYRICS di kode agar permanen.';
+  A.currentTime=0;
+};
+</script>
+</body>
+</html>
